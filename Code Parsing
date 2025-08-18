@@ -1,0 +1,67 @@
+import os
+from ufal.udpipe import Model, Pipeline
+import time
+import argparse
+from charset_normalizer import from_path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--input', help="Path to prepared input files", required=True)
+parser.add_argument('--output', help="Path for output files", required=True)
+parser.add_argument('--model', default='get_feats/parsing/spanish-gsd-ud-2.5-191206.udpipe', help='Path to the lang model you want to use')
+parser.add_argument('--check_files', default='None', help='Check created files for Codec (like \'utf-8\')')
+args = parser.parse_args()
+
+
+def check_files(codec_to_check):
+    if codec_to_check == 'utf-8':
+        codec_to_check = 'utf_8'
+    codec_okay = True
+    print("Check files for Codec UTF-8")
+
+    generated_files = [f for f in os.listdir(args.output)]
+    for f in generated_files:
+        codec = from_path(args.output + f).best()
+        if codec.encoding != codec_to_check:
+            print(codec.encoding)
+            print(f'ATTENTION: file {f} is not encoded as utf-8!')
+
+start = time.time()
+parse_out = args.output
+os.makedirs(parse_out, exist_ok=True)
+
+model = Model.load(args.model)
+pipeline = Pipeline(model, 'tokenize', Pipeline.DEFAULT, Pipeline.DEFAULT, 'conllu')
+print('UD model is loaded')
+
+
+counter = 0
+files = [f for f in os.listdir(args.input)]
+for f in files:
+    with open(args.input + f, 'r', errors='ignore') as input_text, \
+            open(args.output + f.replace('.txt', '.conllu'), 'w', encoding="utf-8-sig") as udout:
+        try:
+            text = input_text.read().strip()
+            print(f'got text from {f}')
+        except UnicodeDecodeError:
+            print('Unicode error in input file: %s; skipping it' % f)
+            continue
+
+        ud_tagged = pipeline.process(text)
+        udout.write(ud_tagged,)
+        # !!! change the counter value!
+        counter += 1
+
+        # Monitor progress:
+        if counter % 10 == 0:
+            print(f'{counter} files processed')
+
+# Check for files?
+
+if args.check_files != 'None':
+    check_files(args.check_files)
+
+end = time.time()
+processing_time = int(end - start)
+print(f'Processing {args.input} ({counter} files) took {(processing_time / 60):.2f} minites with {args.model} model')
+
+
